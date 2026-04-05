@@ -1,0 +1,26 @@
+{
+  "alpha": 1.0,
+  "Lx": 1.0,
+  "Ly": 1.0,
+  "Lz": 1.0,
+  "T": 0.1,
+  "hidden_width": 64,
+  "hidden_layers": 4,
+  "n_residual": 4000,
+  "n_boundary": 1200,
+  "n_initial": 1200,
+  "learning_rate": 0.001,
+  "epochs": 2500,
+  "print_every": 250,
+  "lambda_pde": 1.0,
+  "lambda_bc": 10.0,
+  "lambda_ic": 10.0,
+  "eval_grid_size": 21,
+  "eval_times": [
+    0.0,
+    0.02,
+    0.05,
+    0.1
+  ],
+  "seed": 42
+}
