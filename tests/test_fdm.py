@@ -1,6 +1,9 @@
 import sys
 import os
+import csv
+from datetime import datetime
 
+# === Добавляем корень проекта в PYTHONPATH ===
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import jax.numpy as jnp
@@ -33,8 +36,9 @@ def compute_errors(Nx: int, Ny: int, Nz: int, T: float = 0.1, alpha: float = 1.0
 
 
 if __name__ == "__main__":
-    print("=== FDM Solver 3D Heat Equation ===")
+    print("=== FDM Solver 3D Heat Equation (JAX) — тесты ===")
 
+    # 1. Проверка граничных условий
     print("\n1. Проверка граничных условий (Nx=Ny=Nz=11, T=0.05)")
     u_test = solve_fdm_3d(11, 11, 11, dt=0.0001, T=0.05)
     assert jnp.allclose(u_test[0, :, :], 0.0), "BC x=0"
@@ -43,14 +47,40 @@ if __name__ == "__main__":
     assert jnp.allclose(u_test[:, -1, :], 0.0), "BC y=Ly"
     assert jnp.allclose(u_test[:, :, 0], 0.0), "BC z=0"
     assert jnp.allclose(u_test[:, :, -1], 0.0), "BC z=Lz"
-    print("Все граничные условия = 0.0")
+    print("✅ Все граничные условия = 0.0")
 
+    # 2. Таблица сходимости + запись в CSV
     print("\n2. Таблица сходимости")
     print("Nx\tL2 error\tL∞ error\tdt\t\tN_points")
-    print("-" * 65)
+    print("-" * 75)
 
-    grid_sizes = [11, 21, 31, 41]
-    for N in grid_sizes:
-        err_l2, err_linf, dt_val, n_points = compute_errors(N, N, N)
-        print(f"{N}\t{err_l2:.2e}\t{err_linf:.2e}\t{dt_val:.2e}\t{n_points}")
+    # Создаём папку results, если её нет
+    os.makedirs("results", exist_ok=True)
+    csv_path = "results/metrics.csv"
 
+    # Заголовки для CSV
+    headers = ["Nx", "L2_error", "Linf_error", "dt", "N_points", "timestamp"]
+
+    # Открываем файл для записи (создаём заново при каждом запуске)
+    with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+
+        grid_sizes = [11, 21, 31, 41]
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for N in grid_sizes:
+            err_l2, err_linf, dt_val, n_points = compute_errors(N, N, N)
+            
+            # Вывод на экран
+            print(f"{N}\t{err_l2:.2e}\t{err_linf:.2e}\t{dt_val:.2e}\t{n_points}")
+
+            # Запись в CSV
+            writer.writerow([
+                N,
+                f"{err_l2:.2e}",
+                f"{err_linf:.2e}",
+                f"{dt_val:.2e}",
+                n_points,
+                timestamp
+            ])
