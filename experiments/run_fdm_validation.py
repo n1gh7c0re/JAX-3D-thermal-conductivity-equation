@@ -1,9 +1,3 @@
-"""
-run_fdm_validation.py
-Полноценная валидация FDM-солвера (Человек 1)
-Аналог run_pinn_validation.py
-"""
-
 from __future__ import annotations
 import sys
 from pathlib import Path
