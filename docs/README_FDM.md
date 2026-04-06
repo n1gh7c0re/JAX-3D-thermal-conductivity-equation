@@ -44,5 +44,5 @@ $$
 | 41  | 1.88e-05   | 5.52e-05   | 1.04e-05    | 68921    |
 ### Установка и запуск
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_fdm.txt
 python tests/test_fdm.py
