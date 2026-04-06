@@ -1,10 +1,8 @@
 import sys
 from pathlib import Path
 
-import sys, os
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.pinn_solver import PINNConfig, train_pinn
 
 
@@ -19,7 +17,8 @@ def test_pinn_smoke():
         print_every=1,
         eval_grid_size=5,
         eval_times=(0.0, 0.1),
+        use_hard_constraints=True,
     )
-    params, history, metrics, _ = train_pinn(cfg)
+    _, history, metrics, _ = train_pinn(cfg)
     assert len(history["epoch"]) == 2
     assert len(metrics) == 2
