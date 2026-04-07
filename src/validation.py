@@ -325,16 +325,14 @@ def plot_snapshots_comparison(
 
 
 def plot_error_vs_time(
-    errors_fdm: pd.DataFrame,
-    errors_pinn: pd.DataFrame,
+    metrics_df: pd.DataFrame,
     output_dir: str | Path = "results/figures",
 ) -> None:
     """
-    Plot error evolution over time: L2 and L∞ for both methods.
+    Plot PINN error evolution over time: L2 and L∞.
 
     Args:
-        errors_fdm: FDM errors DataFrame with columns ['time', 'rel_l2', 'l_inf_abs'].
-        errors_pinn: PINN errors DataFrame with same columns.
+        metrics_df: PINN errors DataFrame with columns ['time', 'rel_l2', 'linf_abs'].
         output_dir: Output directory.
     """
     output_dir = Path(output_dir)
@@ -342,32 +340,30 @@ def plot_error_vs_time(
 
     logger.info("Plotting error vs time...")
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # L2 error
-    axes[0].semilogy(errors_fdm["time"], errors_fdm["rel_l2"], "o-", label="FDM", linewidth=2, markersize=6)
-    axes[0].semilogy(errors_pinn["time"], errors_pinn["rel_l2"], "s-", label="PINN", linewidth=2, markersize=6)
+    # Plot relative L2 error
+    axes[0].semilogy(metrics_df["time"], metrics_df["rel_l2"], "s-", label="PINN", linewidth=2, markersize=6)
     axes[0].set_xlabel("Время t")
     axes[0].set_ylabel("Относительная ошибка L²")
-    axes[0].set_title("Эволюция ошибки L²")
-    axes[0].legend()
+    axes[0].set_title("Эволюция относительной ошибки L²")
     axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
 
-    # L∞ error
-    axes[1].semilogy(errors_fdm["time"], errors_fdm["l_inf_abs"], "o-", label="FDM", linewidth=2, markersize=6)
-    axes[1].semilogy(errors_pinn["time"], errors_pinn["l_inf_abs"], "s-", label="PINN", linewidth=2, markersize=6)
+    # Plot absolute L∞ error
+    axes[1].semilogy(metrics_df["time"], metrics_df["linf"], "o-", label="PINN", linewidth=2, markersize=6)
     axes[1].set_xlabel("Время t")
     axes[1].set_ylabel("Абсолютная ошибка L∞")
-    axes[1].set_title("Эволюция ошибки L∞")
-    axes[1].legend()
+    axes[1].set_title("Эволюция абсолютной ошибки L∞")
     axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
 
     plt.tight_layout()
-    plt.savefig(output_dir / "error_vs_time.png", dpi=300, bbox_inches="tight")
-    plt.savefig(output_dir / "error_vs_time.pdf", bbox_inches="tight")
-    plt.close()
+    fig.savefig(output_dir / "error_vs_time.png", dpi=300, bbox_inches='tight')
+    fig.savefig(output_dir / "error_vs_time.pdf", dpi=300, bbox_inches='tight')
+    plt.close(fig)
 
-    logger.info(f"✓ Error plot saved to {output_dir / 'error_vs_time'}")
+    logger.info(f"✓ Error vs time plot saved to {output_dir / 'error_vs_time.png'}")
 
 
 def plot_fdm_convergence(
@@ -827,6 +823,9 @@ def run_full_validation(
     
     plot_fdm_convergence(fdm_metrics, output_dirs["figures"])
     plot_pinn_loss_history(pinn_results["history"], output_dirs["figures"])
+    
+    logger.info("Plotting PINN error evolution...")
+    plot_error_vs_time(pinn_metrics_time, output_dirs["figures"])
 
     # Benchmark FDM real solve timing
     logger.info("Benchmarking FDM real solve timing...")
