@@ -1,3 +1,6 @@
 jax
 jaxlib
 matplotlib
+pandas
+seaborn
+numpy
