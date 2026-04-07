@@ -8,24 +8,24 @@ src/
 └── validation.py             # Все функции валидации, метрик, графиков
 
 experiments/
-├── run_fdm_validation.py     # Запуск FDM (готово)
-├── run_pinn_validation.py    # Запуск PINN (готово)
-└── run_full_validation.py    # ГЛАВНЫЙ СКРИПТ ВАЛИДАЦИИ
+├── run_fdm_validation.py     # Запуск FDM
+├── run_pinn_validation.py    # Запуск PINN
+└── run_full_validation.py    # главный скрипт валидации
 
 docs/
 └── validation_report.md      # Научный отчет с таблицами и выводами
 
 results/
 ├── fdm/
-│   ├── fdm_u_num_N41.npy     # Численное решение FDM
-│   ├── fdm_u_exact_N41.npy   # Точное решение на сетке
+│   ├── fdm_u_num_N41.npy      # Численное решение FDM
+│   ├── fdm_u_exact_N41.npy    # Точное решение на сетке
 │   ├── metrics.csv            # Таблица сходимости
-│   └── fdm_slice_t_0_1.png
+│   └── fdm_slice_t_0_1.png    # График
 ├── pinn/
 │   ├── params.pkl             # Параметры обученной сети
 │   ├── history.json           # История обучения
 │   ├── metrics_by_time.json   # Ошибки по времени
-│   └── *.png / *.pdf          # Графики
+│   └── *.png                  # Графики
 └── figures/
     ├── comparison/            # Все сравнительные графики
     └── tables/                # Таблицы в Markdown и LaTeX
