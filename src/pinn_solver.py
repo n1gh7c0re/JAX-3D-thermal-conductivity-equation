@@ -155,6 +155,52 @@ def _scalar_predict(params: list[dict[str, Array]], point: Array, cfg: PINNConfi
     return predict(params, point[None, :], cfg).squeeze()
 
 
+def evaluate_pinn(
+    params: list[dict[str, Array]],
+    cfg: PINNConfig,
+    x_grid: Array,
+    y_grid: Array,
+    z_grid: Array,
+    t_eval: Array | float,
+) -> Array:
+    """
+    Evaluate PINN solution on a regular 3D grid at specified time(s).
+    
+    Args:
+        params: Trained network parameters from train_pinn.
+        cfg: PINNConfig with network architecture and domain parameters.
+        x_grid: 1D array of x coordinates.
+        y_grid: 1D array of y coordinates.
+        z_grid: 1D array of z coordinates.
+        t_eval: Scalar float or 1D array of times at which to evaluate.
+    
+    Returns:
+        If t_eval is scalar: (nx, ny, nz) array.
+        If t_eval is 1D array: (nt, nx, ny, nz) array.
+    """
+    from jax import vmap
+    
+    # Helper: evaluate at a single space point and single time
+    def eval_single_point(x: float, y: float, z: float, t: float) -> Array:
+        point = jnp.array([x, y, z, t])
+        return predict(params, point[None, :], cfg).squeeze()
+    
+    # Vectorize over spatial grid
+    eval_xyz = vmap(eval_single_point, in_axes=(0, None, None, None), out_axes=0)  # vectorize over x
+    eval_xyz = vmap(eval_xyz, in_axes=(None, 0, None, None), out_axes=1)  # vectorize over y
+    eval_xyz = vmap(eval_xyz, in_axes=(None, None, 0, None), out_axes=2)  # vectorize over z
+    
+    # Handle scalar vs array time
+    is_scalar_t = jnp.ndim(t_eval) == 0
+    if is_scalar_t:
+        # Evaluate at single time
+        return eval_xyz(x_grid, y_grid, z_grid, float(t_eval))
+    else:
+        # Evaluate at multiple times
+        eval_time = vmap(eval_xyz, in_axes=(None, None, None, 0), out_axes=0)
+        return eval_time(x_grid, y_grid, z_grid, jnp.asarray(t_eval))
+
+
 def pde_residual_single(params: list[dict[str, Array]], point: Array, cfg: PINNConfig) -> Array:
     grad_u = jax.grad(_scalar_predict, argnums=1)(params, point, cfg)
     u_t = grad_u[3]
