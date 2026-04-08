@@ -1,0 +1,31 @@
+# Конфигурация для Physics-Informed Neural Network (PINN)
+domain:
+  Lx: 1.0
+  Ly: 1.0
+  Lz: 1.0
+  alpha: 0.1
+  T: 1.0
+
+network:
+  layers: [4, 96, 96, 96, 96, 96, 1] # 5 скрытых слоев по 96 нейронов
+  activation: "tanh"
+
+training:
+  epochs: 8000
+  optimizer: "Adam"
+  learning_rate:
+    initial: 0.001
+    decay_steps: 8000
+    end_learning_rate: 0.0001
+  loss_weights:
+    pde: 1.0
+    bc: 10.0
+    ic: 10.0
+
+sampling:
+  n_collocation: 12000
+  n_boundary: 2000
+  n_initial: 2000
+
+evaluation:
+  eval_grid_size: 21 # 21x21x21 из-за ограничений памяти
