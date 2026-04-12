@@ -15,7 +15,7 @@
 
 ```bash
 # Установка зависимостей
-pip install -r requirements.txt
+pip install -r requirements_pinn.txt
 
 # Запуск демонстрации (сравнение с аналитическим решением)
 bash run_demo.sh
