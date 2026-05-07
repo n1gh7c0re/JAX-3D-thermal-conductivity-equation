@@ -45,8 +45,12 @@ def solve_fdm_3d(
     dz = Lz / (Nz - 1)
 
     dt_max = min(dx, dy, dz)**2 / (6.0 * alpha)
+
+    dt_used = dt
     if dt > dt_max:
-        print(f"ВНИМАНИЕ: dt = {dt:.2e} > dt_max = {dt_max:.2e}. Схема может быть неустойчива!")
+        print(f"⚠️  ВНИМАНИЕ: dt = {dt:.2e} > dt_max = {dt_max:.2e}.")
+        dt_used = dt_max * 0.95
+        print(f"   dt автоматически скорректирован до {dt_used:.2e} для устойчивости.")
 
     n_steps = int(round(T / dt))
     if n_steps < 1:
