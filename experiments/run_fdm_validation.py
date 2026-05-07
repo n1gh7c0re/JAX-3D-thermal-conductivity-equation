@@ -29,7 +29,7 @@ def compute_metrics(Nx: int, Ny: int, Nz: int, T: float = 0.1, alpha: float = 1.
     dt = 0.1 * min(dx, dy, dz)**2 / (6.0 * alpha)
 
     u_num = solve_fdm_3d(Nx, Ny, Nz, dt, T, alpha, Lx, Ly, Lz)
-
+    
     x = jnp.linspace(0.0, Lx, Nx)
     y = jnp.linspace(0.0, Ly, Ny)
     z = jnp.linspace(0.0, Lz, Nz)
