@@ -52,14 +52,14 @@ def solve_fdm_3d(
         dt_used = dt_max * 0.95
         print(f"   dt автоматически скорректирован до {dt_used:.2e} для устойчивости.")
 
-    n_steps = int(round(T / dt))
+    n_steps = int(round(T / dt_used))
     if n_steps < 1:
         n_steps = 1
 
     u0 = create_initial_condition(Nx, Ny, Nz, Lx, Ly, Lz)
 
     def scan_body(carry, _):
-        return euler_step(carry, dt, alpha, dx, dy, dz), None
+        return euler_step(carry, dt_used, alpha, dx, dy, dz), None
 
     final_u, _ = lax.scan(scan_body, u0, None, length=n_steps)
     return final_u
