@@ -53,8 +53,8 @@ Examples:
     parser.add_argument(
         "--grid_size",
         type=int,
-        default=41,
-        help="Grid size N for N³ domain (default 41)",
+        default=21,
+        help="Grid size N for N³ domain (default 21)",
     )
     parser.add_argument(
         "--device",
