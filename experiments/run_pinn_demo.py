@@ -41,7 +41,7 @@ def main() -> None:
     output_dir = Path("results/pinn_demo")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    params, history, metrics_by_time, cfg = train_pinn(cfg)
+    params, history, metrics_by_time, cfg, train_time_s = train_pinn(cfg)
     save_training_outputs(output_dir, params, history, metrics_by_time, cfg)
     save_metrics_table(metrics_by_time, output_dir)
     plot_loss_curves(history, output_dir)

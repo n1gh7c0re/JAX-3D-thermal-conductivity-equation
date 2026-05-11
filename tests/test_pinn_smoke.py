@@ -19,6 +19,7 @@ def test_pinn_smoke():
         eval_times=(0.0, 0.1),
         use_hard_constraints=True,
     )
-    _, history, metrics, _ = train_pinn(cfg)
+    _, history, metrics, _, train_time_s = train_pinn(cfg)
     assert len(history["epoch"]) == 2
     assert len(metrics) == 2
+    assert isinstance(train_time_s, float)

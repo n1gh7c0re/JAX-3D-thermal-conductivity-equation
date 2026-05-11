@@ -98,7 +98,7 @@ def main():
     print("-" * 80)
 
     for N in grid_sizes:
-        metrics = compute_metrics(N, N, N, T=0.1)
+        metrics = compute_metrics(N, N, N, T=1.0, alpha=0.1)
         metrics_list.append(metrics)
 
         print(f"{N}\t{metrics['L2']:.2e}\t{metrics['Linf']:.2e}\t{metrics['dt']:.2e}\t{metrics['N_points']}")
@@ -121,12 +121,12 @@ def main():
 
     # Сохранение решений для самой точной сетки
     finest = metrics_list[-1]
-    jnp.save(output_dir / "fdm_u_num_N41.npy", finest["u_num"])
-    jnp.save(output_dir / "fdm_u_exact_N41.npy", finest["u_exact"])
+    jnp.save(output_dir / "fdm_u_num_N21.npy", finest["u_num"])
+    jnp.save(output_dir / "fdm_u_exact_N21.npy", finest["u_exact"])
 
     # Визуализация
     plot_slice_comparison(finest["u_num"], finest["u_exact"], 
-                         time_value=0.1, output_dir=output_dir, grid_size=41)
+                         time_value=1.0, output_dir=output_dir, grid_size=21)
 
 
 if __name__ == "__main__":

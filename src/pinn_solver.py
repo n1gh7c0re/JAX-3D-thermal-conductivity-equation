@@ -4,6 +4,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
 import pickle
+import time
 from typing import Dict, Tuple
 from functools import partial
 
@@ -372,6 +373,7 @@ def train_pinn(cfg: PINNConfig | None = None):
     key = jax.random.PRNGKey(cfg.seed + 123)
     history = {"epoch": [], "learning_rate": [], "loss_total": [], "loss_pde": [], "loss_bc": [], "loss_ic": []}
 
+    start_time = time.perf_counter()
     total_epochs = cfg.pretrain_ic_bc_epochs + cfg.epochs
     for global_epoch in range(1, total_epochs + 1):
         key, subkey = jax.random.split(key)
@@ -399,8 +401,11 @@ def train_pinn(cfg: PINNConfig | None = None):
                 f"pde={metrics['loss_pde']:.3e}, bc={metrics['loss_bc']:.3e}, ic={metrics['loss_ic']:.3e}"
             )
 
+    train_time_s = float(time.perf_counter() - start_time)
+    history["train_time_s"] = train_time_s
+    history["training_time_sec"] = train_time_s
     metrics_by_time = [compute_error_metrics(params, cfg, t) for t in cfg.eval_times]
-    return params, history, metrics_by_time, cfg
+    return params, history, metrics_by_time, cfg, train_time_s
 
 
 def save_training_outputs(output_dir: str | Path, params, history, metrics_by_time, cfg: PINNConfig):

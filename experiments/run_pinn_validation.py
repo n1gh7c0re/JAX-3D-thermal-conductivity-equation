@@ -91,8 +91,8 @@ def save_metrics_table(metrics_by_time, output_dir: Path):
 
 def main():
     cfg = PINNConfig(
-        alpha=1.0,
-        T=0.1,
+        alpha=0.1,
+        T=1.0,
         hidden_width=96,
         hidden_layers=5,
         n_residual=12000,
@@ -105,14 +105,15 @@ def main():
         use_hard_constraints=True,
         pretrain_ic_bc_epochs=0,
         eval_grid_size=21,
-        eval_times=(0.0, 0.02, 0.05, 0.1),
+        eval_times=(0.0, 0.1, 0.3, 0.5, 1.0),
         seed=42,
     )
 
     output_dir = Path("results/pinn")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    params, history, metrics_by_time, cfg = train_pinn(cfg)
+    params, history, metrics_by_time, cfg, train_time_s = train_pinn(cfg)
+    history["training_time_sec"] = train_time_s
     save_training_outputs(output_dir, params, history, metrics_by_time, cfg)
     save_metrics_table(metrics_by_time, output_dir)
     plot_loss_curves(history, output_dir)

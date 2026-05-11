@@ -13,6 +13,8 @@ from typing import Dict, Tuple, Optional, Any
 import pickle
 import json
 import os
+import time
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -24,6 +26,7 @@ import seaborn as sns
 from matplotlib import rcParams
 
 from src.analytical_solution import analytical_solution, decay_rate
+from src.pinn_solver import PINNConfig
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +121,8 @@ def load_pinn_results(base_dir: str | Path = "results/pinn") -> Dict[str, Any]:
             metrics_by_time = json.load(f)
 
         with open(base_dir / "config.json", "r") as f:
-            config = json.load(f)
+            config_dict = json.load(f)
+        config = PINNConfig(**config_dict)
 
         logger.info(f"✓ PINN results loaded: {len(history['epoch'])} epochs, config={config}")
 
@@ -207,14 +211,18 @@ def generate_comparison_table(
     fdm_metrics: pd.DataFrame,
     pinn_metrics: pd.DataFrame,
     output_dir: str | Path = "results/tables",
+    fdm_timing: dict | None = None,
+    pinn_timing: dict | None = None,
 ) -> pd.DataFrame:
     """
-    Generate comparison table for FDM vs PINN at multiple resolutions.
+    Generate comparison table for FDM vs PINN at a single comparison grid.
 
     Args:
         fdm_metrics: FDM metrics DataFrame from load_fdm_results.
         pinn_metrics: PINN metrics DataFrame (time-based).
         output_dir: Directory to save table outputs.
+        fdm_timing: Optional timing summary for FDM.
+        pinn_timing: Optional timing summary for PINN.
 
     Returns:
         Merged comparison DataFrame.
@@ -224,37 +232,58 @@ def generate_comparison_table(
 
     logger.info("Generating comparison table...")
 
-    # Convert FDM metrics to readable format
-    fdm_table = fdm_metrics[["Nx", "L2", "Linf", "N_points"]].copy()
+    # Use only the 21³ FDM row for direct comparison with PINN.
+    fdm_table = fdm_metrics[fdm_metrics["Nx"] == 21][["Nx", "L2", "Linf", "N_points"]].copy()
+    if fdm_table.empty:
+        logger.warning("No FDM metrics row found for Nx=21; using available FDM metrics for comparison.")
+        fdm_table = fdm_metrics[["Nx", "L2", "Linf", "N_points"]].copy()
     fdm_table.columns = ["Grid Size", "FDM L2 Error", "FDM L∞ Error", "Grid Points"]
     fdm_table["FDM L2 Error"] = fdm_table["FDM L2 Error"].map(lambda x: f"{x:.2e}")
     fdm_table["FDM L∞ Error"] = fdm_table["FDM L∞ Error"].map(lambda x: f"{x:.2e}")
+    fdm_table["FDM Solve Time (s)"] = fdm_timing.get("fdm_time_s", "") if fdm_timing else ""
+    fdm_table["PINN Train Time (s)"] = ""
+    fdm_table["PINN Inference Time (s)"] = ""
+    fdm_table["PINN Total Time (s)"] = ""
 
-    # Extract PINN metrics at final time (or best error)
-    if isinstance(pinn_metrics, pd.DataFrame):
-        if len(pinn_metrics) > 0 and "rel_l2" in pinn_metrics.columns:
-            pinn_final = pinn_metrics.iloc[pinn_metrics["rel_l2"].idxmin()].to_dict()
+    if isinstance(pinn_metrics, pd.DataFrame) and len(pinn_metrics) > 0 and "rel_l2" in pinn_metrics.columns:
+        if "time" in pinn_metrics.columns:
+            non_initial = pinn_metrics[pinn_metrics["time"] > 0.0]
+            metrics_for_final = non_initial if not non_initial.empty else pinn_metrics
+            pinn_final = metrics_for_final.sort_values("time").iloc[-1].to_dict()
         else:
-            pinn_final = {}
+            pinn_final = pinn_metrics.iloc[-1].to_dict()
     else:
-        # pinn_metrics might be dict or list of dicts
         pinn_final = {}
 
     pinn_row = pd.DataFrame([{
         "Grid Size": "PINN (21³)",
         "FDM L2 Error": f"{pinn_final.get('rel_l2', 0):.2e}",
-        "FDM L∞ Error": f"{pinn_final.get('rel_l_inf', pinn_final.get('l_inf', 0)):.2e}",
+        "FDM L∞ Error": f"{pinn_final.get('rel_l_inf', pinn_final.get('rel_linf', pinn_final.get('linf_abs', pinn_final.get('linf', 0)))):.2e}",
         "Grid Points": "9261",
+        "FDM Solve Time (s)": "",
+        "PINN Train Time (s)": (
+            f"{float(pinn_timing.get('train_time_s', 0.0)):.2f}"
+            if pinn_timing and pinn_timing.get('train_time_s') is not None
+            else ""
+        ),
+        "PINN Inference Time (s)": (
+            f"{float(pinn_timing.get('inference_pinn_s', 0.0)):.2f}"
+            if pinn_timing and pinn_timing.get('inference_pinn_s') is not None
+            else ""
+        ),
+        "PINN Total Time (s)": (
+            f"{float(pinn_timing.get('total_time_s', 0.0)):.2f}"
+            if pinn_timing and pinn_timing.get('total_time_s') is not None
+            else ""
+        ),
     }])
 
     comparison = pd.concat([fdm_table, pinn_row], ignore_index=True)
 
-    # Save as markdown table
     md_table = comparison.to_markdown(index=False)
     (output_dir / "comparison_table.md").write_text(md_table, encoding="utf-8")
     logger.info(f"✓ Comparison table saved to {output_dir / 'comparison_table.md'}")
 
-    # Save as LaTeX
     latex_table = comparison.to_latex(index=False, escape=False)
     (output_dir / "comparison_table.tex").write_text(latex_table, encoding="utf-8")
     logger.info(f"✓ LaTeX table saved to {output_dir / 'comparison_table.tex'}")
@@ -610,6 +639,106 @@ def benchmark_fdm_timing(
     }
 
 
+def benchmark_inference_timing(
+    params,
+    cfg,
+    grid_size: int = 21,
+    Lx: float = 1.0,
+    Ly: float = 1.0,
+    Lz: float = 1.0,
+    alpha: float = 0.1,
+    T: float = 1.0,
+    training_time_s: float | None = None,
+    n_warmup: int = 1,
+    n_runs: int = 1,
+) -> Dict[str, float]:
+    """
+    Benchmark inference timing for FDM and PINN on the same grid.
+
+    Args:
+        params: Trained PINN parameters.
+        cfg: PINN configuration object or dict.
+        grid_size: Grid size for inference benchmarking.
+        Lx, Ly, Lz: Domain dimensions.
+        alpha: Thermal diffusivity.
+        T: Final time for the FDM solve benchmark.
+        training_time_s: Optional training time to include in total runtime.
+        n_warmup: Number of warmup runs.
+        n_runs: Number of timed runs.
+
+    Returns:
+        Timing dictionary with inference_fdm_s, inference_pinn_s, and total_time_s.
+    """
+    from src.fdm_solver import solve_fdm_3d
+    from src.pinn_solver import predict, PINNConfig
+
+    if isinstance(cfg, dict):
+        cfg = PINNConfig(**cfg)
+
+    logger.info(f"Benchmarking inference timing on {grid_size}³ grid...")
+
+    # FDM inference warmup + timed solve
+    dx = Lx / (grid_size - 1)
+    dy = Ly / (grid_size - 1)
+    dz = Lz / (grid_size - 1)
+    dt_cfl = 0.1 * min(dx, dy, dz)**2 / (6.0 * alpha)
+
+    for _ in range(n_warmup):
+        u = solve_fdm_3d(
+            Nx=grid_size, Ny=grid_size, Nz=grid_size,
+            dt=dt_cfl, T=T,
+            Lx=Lx, Ly=Ly, Lz=Lz,
+            alpha=alpha,
+        )
+        u.block_until_ready()
+
+    # PINN inference warmup + timed predict
+    x = jnp.linspace(0.0, Lx, grid_size)
+    y = jnp.linspace(0.0, Ly, grid_size)
+    z = jnp.linspace(0.0, Lz, grid_size)
+    X, Y, Z = jnp.meshgrid(x, y, z, indexing="ij")
+    T_grid = jnp.full_like(X, T)
+    points = jnp.stack([X, Y, Z, T_grid], axis=-1).reshape(-1, 4)
+    predict_fn = partial(predict, cfg=cfg)
+    predict_jit = jax.jit(predict_fn)
+    for _ in range(n_warmup):
+        pred = predict_jit(params, points)
+        jax.block_until_ready(pred)
+
+    fdm_times = []
+    pinn_times = []
+    for _ in range(n_runs):
+        t0 = time.perf_counter()
+        u = solve_fdm_3d(
+            Nx=grid_size, Ny=grid_size, Nz=grid_size,
+            dt=dt_cfl, T=T,
+            Lx=Lx, Ly=Ly, Lz=Lz,
+            alpha=alpha,
+        )
+        u.block_until_ready()
+        fdm_times.append(time.perf_counter() - t0)
+
+        t0 = time.perf_counter()
+        pred = predict_jit(params, points)
+        jax.block_until_ready(pred)
+        pinn_times.append(time.perf_counter() - t0)
+
+    inference_fdm_s = float(np.mean(fdm_times))
+    inference_pinn_s = float(np.mean(pinn_times))
+    total_time_s = (
+        inference_pinn_s
+        if training_time_s is None
+        else float(training_time_s + inference_pinn_s)
+    )
+
+    return {
+        "inference_fdm_s": inference_fdm_s,
+        "inference_fdm_std_s": float(np.std(fdm_times)) if n_runs > 1 else 0.0,
+        "inference_pinn_s": inference_pinn_s,
+        "inference_pinn_std_s": float(np.std(pinn_times)) if n_runs > 1 else 0.0,
+        "total_time_s": total_time_s,
+    }
+
 
 def compute_convergence_orders(
     metrics: pd.DataFrame,
@@ -682,10 +811,11 @@ def evaluate_pinn_on_grid(
     
     config = pinn_results.get("config", {})
     params = pinn_results.get("params")
-    
+    if isinstance(config, dict):
+        config = PINNConfig(**config)
+
     if eval_times is None:
-        eval_times = config.get("eval_times", [T])
-    
+        eval_times = config.eval_times if hasattr(config, "eval_times") else [T]
     x = jnp.linspace(0, Lx, grid_size)
     y = jnp.linspace(0, Ly, grid_size)
     z = jnp.linspace(0, Lz, grid_size)
@@ -695,10 +825,8 @@ def evaluate_pinn_on_grid(
     u_pinn_final = None
     
     for t in eval_times:
-        T_eval = jnp.full_like(X, t)
-        
-        # Evaluate PINN
-        u_pinn = evaluate_pinn(params, config, X, Y, Z, T_eval)
+        # Evaluate PINN on 1D grid vectors as intended by evaluate_pinn
+        u_pinn = evaluate_pinn(params, config, x, y, z, t)
         u_exact = analytical_solution(X, Y, Z, t, Lx, Ly, Lz, alpha)
         
         # Compute errors
@@ -720,7 +848,7 @@ def evaluate_pinn_on_grid(
 
 
 def run_full_validation(
-    grid_size: int = 41,
+    grid_size: int = 21,
     Lx: float = 1.0,
     Ly: float = 1.0,
     Lz: float = 1.0,
@@ -731,7 +859,7 @@ def run_full_validation(
     Main orchestrator function for full validation.
 
     Args:
-        grid_size: Grid size for evaluation (default 41).
+        grid_size: Grid size for evaluation (default 21).
         Lx, Ly, Lz: Domain lengths.
         alpha: Thermal diffusivity coefficient.
         T: Final time.
@@ -784,13 +912,68 @@ def run_full_validation(
 
     # Compute PINN errors at different times
     pinn_metrics_time = pd.DataFrame(pinn_results["metrics_by_time"])
+    pinn_train_time_s = pinn_results["history"].get(
+        "training_time_sec",
+        pinn_results["history"].get("train_time_s", None),
+    )
+
+    # Benchmark inference timing on the comparison grid
+    logger.info("Benchmarking FDM and PINN inference timing on 21³ grid...")
+    try:
+        inference_timing = benchmark_inference_timing(
+            pinn_results["params"],
+            pinn_results["config"],
+            grid_size=21,
+            Lx=Lx, Ly=Ly, Lz=Lz,
+            alpha=alpha, T=T,
+            training_time_s=pinn_train_time_s,
+            n_warmup=1, n_runs=1,
+        )
+        logger.info(
+            f"✓ Inference timing: FDM={inference_timing['inference_fdm_s']:.2f} s, "
+            f"PINN={inference_timing['inference_pinn_s']:.2f} s"
+        )
+    except Exception as e:
+        logger.warning(f"⚠ Inference timing benchmark failed: {e}")
+        inference_timing = None
+
+    # Benchmark FDM real solve timing
+    logger.info("Benchmarking FDM real solve timing...")
+    try:
+        fdm_timing = benchmark_fdm_timing(
+            grid_size=grid_size,
+            Lx=Lx, Ly=Ly, Lz=Lz,
+            alpha=alpha, T=T,
+            n_warmup=1, n_runs=1
+        )
+        logger.info(f"✓ Real FDM solve: {fdm_timing['fdm_time_s']:.2f}±{fdm_timing['fdm_time_std_s']:.2f} seconds")
+    except Exception as e:
+        logger.warning(f"⚠ FDM timing benchmark failed: {e}")
+        fdm_timing = None
 
     # Compute FDM convergence orders
     convergence_orders = compute_convergence_orders(fdm_metrics, output_dirs["tables"])
 
     # Generate tables
     logger.info("Generating comparison tables...")
-    comp_table = generate_comparison_table(fdm_metrics, pinn_metrics_time, output_dirs["tables"])
+
+    comp_table = generate_comparison_table(
+        fdm_metrics,
+        pinn_metrics_time,
+        output_dirs["tables"],
+        fdm_timing=fdm_timing,
+        pinn_timing={
+            "train_time_s": pinn_train_time_s if pinn_train_time_s is not None else None,
+            "inference_pinn_s": inference_timing["inference_pinn_s"] if inference_timing else None,
+            "total_time_s": inference_timing["total_time_s"] if inference_timing else None,
+        },
+    )
+
+    if pinn_train_time_s is not None:
+        logger.info(f"PINN train time: {pinn_train_time_s:.2f} s")
+    if inference_timing is not None:
+        logger.info(f"PINN inference time: {inference_timing['inference_pinn_s']:.2f} s")
+        logger.info(f"PINN total time: {inference_timing['total_time_s']:.2f} s")
 
     # Log CFL stability information
     dx = Lx / (grid_size - 1)
@@ -804,12 +987,12 @@ def run_full_validation(
     # Log PINN hyperparameters from config
     pinn_config = pinn_results.get("config", {})
     logger.info(f"PINN Hyperparameters:")
-    logger.info(f"  Hidden width: {pinn_config.get('hidden_width', 'N/A')}")
-    logger.info(f"  Hidden layers: {pinn_config.get('hidden_layers', 'N/A')}")
-    logger.info(f"  Training epochs: {pinn_config.get('epochs', 'N/A')}")
-    logger.info(f"  PDE loss weight (λ_pde): {pinn_config.get('lambda_pde', 'N/A')}")
-    logger.info(f"  BC loss weight (λ_bc): {pinn_config.get('lambda_bc', 'N/A')}")
-    logger.info(f"  IC loss weight (λ_ic): {pinn_config.get('lambda_ic', 'N/A')}")
+    logger.info(f"  Hidden width: {getattr(pinn_config, 'hidden_width', 'N/A')}")
+    logger.info(f"  Hidden layers: {getattr(pinn_config, 'hidden_layers', 'N/A')}")
+    logger.info(f"  Training epochs: {getattr(pinn_config, 'epochs', 'N/A')}")
+    logger.info(f"  PDE loss weight (λ_pde): {getattr(pinn_config, 'lambda_pde', 'N/A')}")
+    logger.info(f"  BC loss weight (λ_bc): {getattr(pinn_config, 'lambda_bc', 'N/A')}")
+    logger.info(f"  IC loss weight (λ_ic): {getattr(pinn_config, 'lambda_ic', 'N/A')}")
 
     # Plot comparisons
     logger.info("Generating plots...")
@@ -826,29 +1009,6 @@ def run_full_validation(
     
     logger.info("Plotting PINN error evolution...")
     plot_error_vs_time(pinn_metrics_time, output_dirs["figures"])
-
-    # Benchmark FDM real solve timing
-    logger.info("Benchmarking FDM real solve timing...")
-    try:
-        fdm_timing = benchmark_fdm_timing(
-            grid_size=grid_size,
-            Lx=Lx, Ly=Ly, Lz=Lz,
-            alpha=alpha, T=T,
-            n_warmup=1, n_runs=1
-        )
-        logger.info(f"✓ Real FDM solve: {fdm_timing['fdm_time_s']:.2f}±{fdm_timing['fdm_time_std_s']:.2f} seconds")
-    except Exception as e:
-        logger.warning(f"⚠ FDM timing benchmark failed: {e}")
-        fdm_timing = None
-    
-    # Benchmark inference timing
-    logger.info("Running inference benchmarks...")
-    timings = benchmark_timing(u_fdm, u_fdm)
-    logger.info(f"Timing (inference): FDM array copy={timings['fdm_mean_ms']:.3f}±{timings['fdm_std_ms']:.3f} ms")
-    if fdm_timing is None:
-        logger.info(f"Note: Full FDM solve estimated ~{n_steps_estimated * timings['fdm_mean_ms'] / 1000:.1f} seconds for {grid_size}³ grid")
-    else:
-        logger.info(f"Note: Full FDM solve measured {fdm_timing['fdm_time_s']:.1f} seconds for {grid_size}³ grid")
 
     logger.info("=" * 80)
     logger.info("VALIDATION COMPLETE")
